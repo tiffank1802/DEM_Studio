@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+# Add core/ directory to path for bucket_io import
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 try:
     from partitioners import create_partitioner
     from huggingface_hub import HfFileSystem

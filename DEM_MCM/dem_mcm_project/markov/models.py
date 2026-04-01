@@ -7,10 +7,15 @@ Hiérarchie:
                                  → MatrixDiagnostics
 """
 
+import sys
 import numpy as np
 import json
+from pathlib import Path
 from django.db import models
 from django.core.validators import MinValueValidator
+
+# Add src/ directory to path for bucket_io import
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 
 class PartitionMethod(models.Model):
@@ -18,6 +23,7 @@ class PartitionMethod(models.Model):
     Type de partitionnement spatial.
     Ex: cartesian, cylindrical, voronoi, quantile, octree, physics
     """
+
     METHODS = [
         ("cartesian", "Cartésien"),
         ("cylindrical", "Cylindrique"),
@@ -33,7 +39,7 @@ class PartitionMethod(models.Model):
     # Paramètres spécifiques (JSON)
     parameters = models.JSONField(
         default=dict,
-        help_text="Paramètres du partitionneur (nx, ny, nz, nr, ntheta, n_cells, ...)"
+        help_text="Paramètres du partitionneur (nx, ny, nz, nr, ntheta, n_cells, ...)",
     )
 
     # Label unique (ex: "voronoi_125cells", "cartesian_nx5_ny5_nz5")
@@ -45,8 +51,9 @@ class PartitionMethod(models.Model):
     population_mean = models.FloatField(null=True, blank=True)
     population_std = models.FloatField(null=True, blank=True)
     population_cv = models.FloatField(
-        null=True, blank=True,
-        help_text="Coefficient de variation = std/mean (plus petit = mieux)"
+        null=True,
+        blank=True,
+        help_text="Coefficient de variation = std/mean (plus petit = mieux)",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -69,34 +76,34 @@ class Experiment(models.Model):
     """
     Une expérience = un jeu de paramètres + une matrice de transition.
     """
+
     # ── Identifiant ──
     folder_name = models.CharField(
-        max_length=300, unique=True, db_index=True,
-        help_text="Nom du dossier dans le bucket HF"
+        max_length=300,
+        unique=True,
+        db_index=True,
+        help_text="Nom du dossier dans le bucket HF",
     )
 
     # ── Partitionnement ──
     partition_method = models.ForeignKey(
-        PartitionMethod, on_delete=models.CASCADE,
-        related_name="experiments"
+        PartitionMethod, on_delete=models.CASCADE, related_name="experiments"
     )
 
     # ── Hyperparamètres d'apprentissage ──
     nlt = models.IntegerField(
         "Learning Time (NLT)",
         validators=[MinValueValidator(1)],
-        help_text="Nombre de paires de snapshots pour l'apprentissage"
+        help_text="Nombre de paires de snapshots pour l'apprentissage",
     )
     step_size = models.IntegerField(
         "Pas temporel (step)",
         default=1,
         validators=[MinValueValidator(1)],
-        help_text="Intervalle entre deux snapshots d'une paire"
+        help_text="Intervalle entre deux snapshots d'une paire",
     )
     start_index = models.IntegerField(
-        "Index de départ",
-        default=0,
-        help_text="Premier fichier DEM utilisé"
+        "Index de départ", default=0, help_text="Premier fichier DEM utilisé"
     )
 
     # ── Métadonnées ──
@@ -135,15 +142,14 @@ class TransitionMatrix(models.Model):
     Matrice de transition P et ses diagnostics.
     La matrice elle-même est stockée dans le bucket (trop grande pour la DB).
     """
+
     experiment = models.OneToOneField(
-        Experiment, on_delete=models.CASCADE,
-        related_name="matrix"
+        Experiment, on_delete=models.CASCADE, related_name="matrix"
     )
 
     # ── Diagnostics de la matrice ──
     diagonal_mean = models.FloatField(
-        "P(rester) moyen",
-        help_text="Moyenne de la diagonale de P"
+        "P(rester) moyen", help_text="Moyenne de la diagonale de P"
     )
     diagonal_std = models.FloatField("σ diagonale", default=0)
     diagonal_min = models.FloatField("Min diagonale", default=0)
@@ -164,18 +170,21 @@ class TransitionMatrix(models.Model):
 
     # ── Spectre ──
     eigenvalue_2 = models.FloatField(
-        "|λ₂|", null=True, blank=True,
-        help_text="2ème plus grande valeur propre (vitesse de mélange)"
+        "|λ₂|",
+        null=True,
+        blank=True,
+        help_text="2ème plus grande valeur propre (vitesse de mélange)",
     )
     spectral_gap = models.FloatField(
-        "Gap spectral", null=True, blank=True,
-        help_text="1 - |λ₂| (plus grand = mélange plus rapide)"
+        "Gap spectral",
+        null=True,
+        blank=True,
+        help_text="1 - |λ₂| (plus grand = mélange plus rapide)",
     )
 
     # ── Stockage ──
     matrix_bucket_path = models.CharField(
-        max_length=500,
-        help_text="Chemin vers transition_matrix.npy dans le bucket"
+        max_length=500, help_text="Chemin vers transition_matrix.npy dans le bucket"
     )
 
     class Meta:
@@ -187,6 +196,7 @@ class TransitionMatrix(models.Model):
     def load_matrix(self):
         """Charge la matrice depuis le bucket."""
         from bucket_io import load_matrix_from_bucket
+
         return load_matrix_from_bucket(self.matrix_bucket_path)
 
 
@@ -195,20 +205,19 @@ class RSDResult(models.Model):
     Résultat de simulation RSD pour une expérience.
     Peut être DEM (réel) ou Markov (prédit).
     """
+
     SOURCE_CHOICES = [
         ("dem", "DEM (réel)"),
         ("markov", "Markov (prédit)"),
     ]
 
     experiment = models.ForeignKey(
-        Experiment, on_delete=models.CASCADE,
-        related_name="rsd_results"
+        Experiment, on_delete=models.CASCADE, related_name="rsd_results"
     )
 
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, db_index=True)
     species_criterion = models.CharField(
-        max_length=50, default="z_median",
-        help_text="Critère de séparation des espèces"
+        max_length=50, default="z_median", help_text="Critère de séparation des espèces"
     )
     n_steps = models.IntegerField("Pas de simulation", default=200)
 
@@ -221,13 +230,11 @@ class RSDResult(models.Model):
 
     # ── Courbes (JSON arrays) ──
     rsd_curve = models.JSONField(
-        default=list, blank=True,
-        help_text="RSD(t) en pourcentage"
+        default=list, blank=True, help_text="RSD(t) en pourcentage"
     )
     entropy_curve = models.JSONField(default=list, blank=True)
     concentration_final = models.JSONField(
-        default=list, blank=True,
-        help_text="Concentration par cellule au dernier pas"
+        default=list, blank=True, help_text="Concentration par cellule au dernier pas"
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -248,6 +255,7 @@ class DEMSnapshot(models.Model):
     """
     Référence vers un snapshot DEM (fichier CSV dans le bucket).
     """
+
     file_index = models.IntegerField(unique=True, db_index=True)
     filename = models.CharField(max_length=200)
     n_particles = models.IntegerField(default=0)

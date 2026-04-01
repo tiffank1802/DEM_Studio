@@ -221,6 +221,47 @@
 
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
+// Indicateur de chargement initial
+(function() {
+    const overlay = document.createElement('div');
+    overlay.id = 'loading-overlay';
+    overlay.className = 'fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center';
+    overlay.innerHTML = `
+        <div class="glass-card p-8 max-w-md w-full mx-4 text-center">
+            <div class="mb-4">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
+                    <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900 mb-2">Chargement des analyses...</h3>
+                <p class="text-sm text-gray-600">Calcul des métriques pour toutes les expériences</p>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div class="bg-blue-600 h-2 rounded-full animate-pulse" style="width: 100%"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    let chartsReady = false;
+    const checkReady = setInterval(() => {
+        const chartDiv = document.getElementById('compare-chart');
+        if (chartDiv && chartDiv.querySelector('svg')) {
+            chartsReady = true;
+        }
+        if (chartsReady) {
+            clearInterval(checkReady);
+            setTimeout(() => {
+                overlay.style.transition = 'opacity 0.3s ease';
+                overlay.style.opacity = '0';
+                setTimeout(() => overlay.remove(), 300);
+            }, 200);
+        }
+    }, 300);
+})();
+
 const compareData = {{ compare_data|safe }};
 const rsdData = {{ rsd_comparison_data|safe }};
 const mixingData = {{ mixing_data|safe }};

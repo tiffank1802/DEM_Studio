@@ -75,7 +75,9 @@ class Command(BaseCommand):
 
                 # ── Déjà importé ? ──
                 if Experiment.objects.filter(folder_name=folder_name).exists():
-                    if not recompute:
+                    exp = Experiment.objects.get(folder_name=folder_name)
+                    has_matrix = TransitionMatrix.objects.filter(experiment=exp).exists()
+                    if has_matrix and not recompute:
                         total_skipped += 1
                         continue
 
@@ -231,6 +233,7 @@ class Command(BaseCommand):
         matrix_path = f"{folder_name}/transition_matrix.npy"
         try:
             P = self._load_matrix(fs, f"{path}/transition_matrix.npy")
+            P=np.nan_to_num(P,nan=0)
         except Exception:
             self.stdout.write(f"   ⚠️ Matrice manquante: {folder_name}")
             return

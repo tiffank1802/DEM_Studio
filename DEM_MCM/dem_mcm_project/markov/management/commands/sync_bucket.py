@@ -228,6 +228,7 @@ class Command(BaseCommand):
         matrix_path = f"{folder_name}/transition_matrix.npy"
         try:
             P = self._load_matrix(fs, f"{path}/transition_matrix.npy")
+            P = np.nan_to_num(P, nan=0.0) 
         except Exception:
             self.stdout.write(f"   ⚠️ Matrice manquante: {folder_name}")
             return
