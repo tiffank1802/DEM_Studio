@@ -1,0 +1,667 @@
+{% extends "markov/base.html" %}
+{% block title %}Analyse Unifiée{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <!-- ═══ SWITCH TABS ═══ -->
+        <div class="col-span-full">
+            <div class="flex gap-3 p-4 bg-gradient-to-r from-blue-50 to-transparent rounded-2xl overflow-x-auto">
+                <button onclick="switchTab('compare', this)" class="tab-btn active flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all whitespace-nowrap"
+                        style="background: rgba(59, 130, 246, 0.15); color: #1e40af;">
+                    ⚖️ Comparaison
+                </button>
+                <button onclick="switchTab('rsd', this)" class="tab-btn flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all text-gray-600 whitespace-nowrap">
+                    📉 RSD
+                </button>
+                <button onclick="switchTab('mixing', this)" class="tab-btn flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all text-gray-600 whitespace-nowrap">
+                    🌀 Mélange
+                </button>
+                <button onclick="switchTab('eigenvalues', this)" class="tab-btn flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all text-gray-600 whitespace-nowrap">
+                    🔢 Valeurs propres
+                </button>
+                <button onclick="switchTab('demmarkov', this)" class="tab-btn flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all text-gray-600 whitespace-nowrap">
+                    🔬 DEM vs Markov
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ TAB: COMPARAISON ═══ -->
+    <div id="compare-content" class="tab-content active">
+        <div class="glass-card p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">📊 Comparaison des Expériences</h2>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Sélecteur de paramètres -->
+                <div class="glass-card p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">🎯 Paramètres</h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="text-sm font-medium text-gray-700 block mb-2">Axe X</label>
+                            <select id="x-axis" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white" onchange="updateCompareCharts()">
+                                <option value="n_states">Nombre d'états</option>
+                                <option value="nlt">NLT</option>
+                                <option value="step_size">Step size</option>
+                                <option value="start_index">Start index</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-sm font-medium text-gray-700 block mb-2">Métrique</label>
+                            <select id="metric-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white" onchange="updateCompareCharts()">
+                                <option value="rsd_initial">RSD initial</option>
+                                <option value="rsd_final">RSD final</option>
+                                <option value="mixing_time_50">t₅₀</option>
+                                <option value="mixing_time_90">t₉₀</option>
+                                <option value="concentration_cv">Concentration CV</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-sm font-medium text-gray-700 block mb-2">Méthode</label>
+                            <select id="method-filter" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white" onchange="updateCompareCharts()">
+                                <option value="">Toutes</option>
+                                <option value="cartesian">Cartésien</option>
+                                <option value="cylindrical">Cylindrique</option>
+                                <option value="voronoi">Voronoï</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistiques -->
+                <div class="glass-card p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">📈 Statistiques</h3>
+                    <div id="compare-stats" class="space-y-3">
+                        <div class="flex justify-between items-center p-3 bg-blue-50 rounded-lg">
+                            <span class="text-sm text-gray-700">Moyenne</span>
+                            <span class="font-bold text-blue-600" id="stat-mean">—</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-green-50 rounded-lg">
+                            <span class="text-sm text-gray-700">Minimum</span>
+                            <span class="font-bold text-green-600" id="stat-min">—</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                            <span class="text-sm text-gray-700">Maximum</span>
+                            <span class="font-bold text-red-600" id="stat-max">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graphique principal -->
+            <div id="compare-chart" style="height: 500px;" class="glass-card p-6"></div>
+        </div>
+    </div>
+
+    <!-- ═══ TAB: RSD ═══ -->
+    <div id="rsd-content" class="tab-content hidden">
+        <div class="glass-card p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">📉 Analyse RSD</h2>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div id="chart-rsd" style="height: 450px;" class="glass-card p-6"></div>
+                <div id="chart-entropy" style="height: 450px;" class="glass-card p-6"></div>
+                <div id="chart-rsd-log" style="height: 450px;" class="glass-card p-6"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ TAB: DEM vs MARKOV ═══ -->
+    <div id="demmarkov-content" class="tab-content hidden">
+        <div class="glass-card p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">🔬 Comparaison DEM vs Markov</h2>
+            
+            <!-- Tableau de comparaison -->
+            <div class="overflow-x-auto mb-8">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b-2 border-gray-300">
+                            <th class="text-left px-3 py-2">Expérience</th>
+                            <th class="text-right px-3 py-2">RSD DEM (%)</th>
+                            <th class="text-right px-3 py-2">RSD Markov (%)</th>
+                            <th class="text-right px-3 py-2">Erreur</th>
+                            <th class="text-right px-3 py-2">t₅₀ DEM</th>
+                            <th class="text-right px-3 py-2">t₅₀ Markov</th>
+                        </tr>
+                    </thead>
+                    <tbody id="demmarkov-table"></tbody>
+                </table>
+            </div>
+
+            <!-- Statistiques -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">Erreur moy (%)</div>
+                    <div class="text-2xl font-bold text-blue-600" id="demmarkov-mean-error">—</div>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">Meilleur</div>
+                    <div class="text-sm font-bold text-green-600" id="demmarkov-best">—</div>
+                </div>
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">Pire</div>
+                    <div class="text-sm font-bold text-red-600" id="demmarkov-worst">—</div>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">Écart-type</div>
+                    <div class="text-2xl font-bold text-purple-600" id="demmarkov-std">—</div>
+                </div>
+            </div>
+
+            <!-- Graphique d'erreur comparatif -->
+            <div id="demmarkov-error-chart" style="height: 400px;" class="glass-card p-6 mb-8"></div>
+
+            <!-- Graphiques de comparaison -->
+            <div id="demmarkov-plots" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
+        </div>
+    </div>
+
+    <!-- ═══ TAB: MÉLANGE ═══ -->
+    <div id="mixing-content" class="tab-content hidden">
+        <div class="glass-card p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">🌀 Dynamiques de Mélange</h2>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div id="chart-mixing-entropy" style="height: 450px;" class="glass-card p-6"></div>
+                <div id="chart-mixing-variance" style="height: 450px;" class="glass-card p-6"></div>
+            </div>
+
+            <!-- Tableau des méthodes -->
+            <div class="glass-card p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">📊 Temps de Convergence</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b-2 border-gray-300">
+                                <th class="text-left px-3 py-2">Méthode</th>
+                                <th class="text-right px-3 py-2">t₅₀ (steps)</th>
+                                <th class="text-right px-3 py-2">t₉₀ (steps)</th>
+                                <th class="text-right px-3 py-2">Variance finale</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mixing-table"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ TAB: VALEURS PROPRES ═══ -->
+    <div id="eigenvalues-content" class="tab-content hidden">
+        <div class="glass-card p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">🔢 Analyse Spectrale</h2>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div id="chart-eigenvalues-spectrum" style="height: 450px;" class="glass-card p-6"></div>
+                <div id="chart-eigenvalues-lambda2" style="height: 450px;" class="glass-card p-6"></div>
+            </div>
+
+            <!-- Tableau d'analyse spectrale -->
+            <div class="glass-card p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">📈 Propriétés Spectrales</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b-2 border-gray-300">
+                                <th class="text-left px-3 py-2">Expérience</th>
+                                <th class="text-right px-3 py-2">λ₂ (2ème vp)</th>
+                                <th class="text-right px-3 py-2">Écart spectral</th>
+                                <th class="text-right px-3 py-2">Temps mélange</th>
+                                <th class="text-right px-3 py-2">Méthode</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eigenvalues-table"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+const compareData = {{ compare_data|safe }};
+const rsdData = {{ rsd_comparison_data|safe }};
+const mixingData = {{ mixing_data|safe }};
+const eigenvaluesData = {{ eigenvalues_data|safe }};
+const demMarkovData = {{ dem_markov_data|safe }};
+
+function switchTab(tabName, btn) {
+    // Masquer tous les onglets
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = '';
+        b.style.color = '#6b7280';
+    });
+    
+    // Afficher l'onglet actif
+    document.getElementById(tabName + '-content').classList.remove('hidden');
+    if (btn) {
+        btn.classList.add('active');
+        btn.style.background = 'rgba(59, 130, 246, 0.15)';
+        btn.style.color = '#1e40af';
+    }
+    
+    // Redessiner les graphiques
+    setTimeout(() => {
+        if (tabName === 'compare') updateCompareCharts();
+        else if (tabName === 'rsd') updateRSDCharts();
+        else if (tabName === 'mixing') updateMixingCharts();
+        else if (tabName === 'eigenvalues') updateEigenvaluesCharts();
+        else if (tabName === 'demmarkov') updateDemMarkovCharts();
+    }, 100);
+}
+
+// Couleurs par méthode
+const methodColors = {
+    'cartesian': '#1f77b4',
+    'cylindrical': '#ff7f0e',
+    'voronoi': '#2ca02c',
+    'quantile': '#d62728',
+    'octree': '#9467bd',
+    'physics': '#8c564b'
+};
+
+function updateCompareCharts() {
+    if (!compareData || compareData.length === 0) return;
+    
+    const xAxis = document.getElementById('x-axis').value;
+    const metric = document.getElementById('metric-select').value;
+    const method = document.getElementById('method-filter').value;
+    
+    let filtered = compareData;
+    if (method) filtered = filtered.filter(d => d.method_name === method);
+    
+    // Grouper par méthode
+    const byMethod = {};
+    filtered.forEach(d => {
+        if (!byMethod[d.method_name]) byMethod[d.method_name] = [];
+        byMethod[d.method_name].push(d);
+    });
+    
+    // Créer une trace par méthode
+    const traces = Object.entries(byMethod).map(([methodName, items]) => {
+        const sortedItems = items.sort((a, b) => a[xAxis] - b[xAxis]);
+        return {
+            x: sortedItems.map(d => d[xAxis]),
+            y: sortedItems.map(d => d[metric] || 0),
+            name: methodName.charAt(0).toUpperCase() + methodName.slice(1),
+            mode: 'lines+markers',
+            line: { 
+                color: methodColors[methodName.toLowerCase()] || '#999',
+                width: 3 
+            },
+            marker: { size: 6 },
+            hovertemplate: `<b>${methodName}</b><br>${xAxis}: %{x}<br>${metric}: %{y:.2f}<extra></extra>`
+        };
+    });
+    
+    // Stats globales
+    const allYs = filtered.map(d => d[metric] || 0);
+    const mean = allYs.reduce((a, b) => a + b, 0) / allYs.length || 0;
+    const min = Math.min(...allYs);
+    const max = Math.max(...allYs);
+    
+    document.getElementById('stat-mean').textContent = mean.toFixed(2);
+    document.getElementById('stat-min').textContent = min.toFixed(2);
+    document.getElementById('stat-max').textContent = max.toFixed(2);
+    
+    // Afficher le graphique
+    Plotly.newPlot('compare-chart', traces, {
+        title: `${metric} vs ${xAxis}`,
+        xaxis: { title: `<b>${xAxis}</b>`, gridcolor: '#e0e0e0' },
+        yaxis: { title: `<b>${metric}</b>`, gridcolor: '#e0e0e0' },
+        hovermode: 'x unified',
+        plot_bgcolor: '#f8f9fa',
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        legend: {
+            x: 1.02, y: 1,
+            xanchor: 'left', yanchor: 'top',
+            bgcolor: 'rgba(255, 255, 255, 0.8)',
+            bordercolor: '#ccc',
+            borderwidth: 1
+        },
+        font: { family: 'Arial, sans-serif', size: 12 }
+    }, { responsive: true });
+}
+
+function updateRSDCharts() {
+    if (!rsdData || rsdData.length === 0) return;
+    
+    waitForPlotly(() => {
+        // Grouper par méthode
+        const byMethod = {};
+        rsdData.forEach(d => {
+            const method = d.method || 'unknown';
+            if (!byMethod[method]) byMethod[method] = [];
+            byMethod[method].push(d);
+        });
+        
+        // Créer une trace par méthode
+        const traces = Object.entries(byMethod).map(([methodName, items]) => {
+            // Moyenne des RSD pour cette méthode
+            const maxLen = Math.max(...items.map(d => d.rsd_percent?.length || 0));
+            const avgRsd = Array(maxLen).fill(0);
+            const counts = Array(maxLen).fill(0);
+            
+            items.forEach(d => {
+                if (d.rsd_percent && d.rsd_percent.length > 0) {
+                    d.rsd_percent.forEach((val, i) => {
+                        if (i < maxLen) {
+                            avgRsd[i] += val;
+                            counts[i] += 1;
+                        }
+                    });
+                }
+            });
+            
+            const smoothed = avgRsd.map((v, i) => counts[i] > 0 ? v / counts[i] : null);
+            
+            return {
+                y: smoothed,
+                x: Array.from({length: smoothed.length}, (_, j) => j),
+                name: `${methodName} (${items.length} exp.)`,
+                mode: 'lines',
+                line: {
+                    color: methodColors[methodName.toLowerCase()] || '#999',
+                    width: 3
+                },
+                hovertemplate: `<b>${methodName}</b><br>Pas: %{x}<br>RSD: %{y:.2f}%<extra></extra>`
+            };
+        });
+        
+        Plotly.newPlot('chart-rsd', traces, {
+            title: '<b>Courbes RSD moyennes par méthode</b>',
+            xaxis: { title: '<b>Pas de temps</b>', gridcolor: '#e0e0e0' },
+            yaxis: { title: '<b>RSD (%)</b>', gridcolor: '#e0e0e0' },
+            hovermode: 'x unified',
+            plot_bgcolor: '#f8f9fa',
+            legend: {
+                x: 1.02, y: 1,
+                xanchor: 'left', yanchor: 'top',
+                bgcolor: 'rgba(255, 255, 255, 0.8)',
+                bordercolor: '#ccc',
+                borderwidth: 1
+            },
+            font: { family: 'Arial, sans-serif', size: 11 }
+        }, { responsive: true });
+    });
+}
+
+function updateDemMarkovCharts() {
+    if (!demMarkovData || demMarkovData.length === 0) return;
+    
+    waitForPlotly(() => {
+        // Table
+        const tableBody = document.getElementById('demmarkov-table');
+        tableBody.innerHTML = '';
+        demMarkovData.forEach((row, idx) => {
+            const tr = document.createElement('tr');
+            const errorColor = row.rsd_final_relative < 10 ? 'green' : row.rsd_final_relative < 30 ? 'orange' : 'red';
+            tr.innerHTML = `
+                <td class="px-3 py-2"><b>${row.method}</b></td>
+                <td class="px-3 py-2 text-right"><span class="bg-blue-100 px-2 py-1 rounded">${row.dem.rsd_final.toFixed(2)}</span></td>
+                <td class="px-3 py-2 text-right"><span class="bg-purple-100 px-2 py-1 rounded">${row.markov.rsd_final.toFixed(2)}</span></td>
+                <td class="px-3 py-2 text-right"><span class="${errorColor === 'green' ? 'bg-green-100' : errorColor === 'orange' ? 'bg-amber-100' : 'bg-red-100'} px-2 py-1 rounded font-bold">${row.rsd_final_relative.toFixed(1)}%</span></td>
+                <td class="px-3 py-2 text-right">${row.dem.mixing_time_50 || '—'}</td>
+                <td class="px-3 py-2 text-right">${row.markov.mixing_time_50 || '—'}</td>
+            `;
+            tableBody.appendChild(tr);
+        });
+        
+        // Stats
+        const errors = demMarkovData.map(d => d.rsd_final_relative);
+        const mean = errors.reduce((a, b) => a + b, 0) / errors.length;
+        document.getElementById('demmarkov-mean-error').textContent = mean.toFixed(1);
+        document.getElementById('demmarkov-best').textContent = Math.min(...errors).toFixed(1) + '%';
+        document.getElementById('demmarkov-worst').textContent = Math.max(...errors).toFixed(1) + '%';
+        document.getElementById('demmarkov-std').textContent = Math.sqrt(errors.reduce((sum, e) => sum + Math.pow(e - mean, 2), 0) / errors.length).toFixed(1);
+        
+        // Graphique d'erreur comparatif
+        const errorTrace = {
+            x: demMarkovData.map(d => d.method),
+            y: demMarkovData.map(d => d.rsd_final_relative),
+            type: 'bar',
+            marker: {
+                color: demMarkovData.map(d => 
+                    d.rsd_final_relative < 10 ? '#22c55e' :
+                    d.rsd_final_relative < 30 ? '#f59e0b' :
+                    '#ef4444'
+                )
+            },
+            text: demMarkovData.map(d => d.rsd_final_relative.toFixed(1) + '%'),
+            textposition: 'auto',
+            hovertemplate: '<b>%{x}</b><br>Erreur: %{y:.2f}%<extra></extra>'
+        };
+        
+        const errorLayoutDiv = document.getElementById('demmarkov-error-chart');
+        if (errorLayoutDiv) {
+            Plotly.newPlot('demmarkov-error-chart', [errorTrace], {
+                title: '<b>Erreur relative DEM vs Markov par méthode</b>',
+                xaxis: { title: '<b>Méthode</b>' },
+                yaxis: { title: '<b>Erreur relative (%)</b>' },
+                plot_bgcolor: '#f8f9fa',
+                font: { family: 'Arial, sans-serif', size: 11 }
+            }, { responsive: true });
+        }
+        
+        // Graphiques de comparaison courbes RSD
+        const plotsContainer = document.getElementById('demmarkov-plots');
+        plotsContainer.innerHTML = '';
+        demMarkovData.forEach((row, idx) => {
+            if (row.dem.rsd_curve.length > 0 && row.markov.rsd_curve.length > 0) {
+                const div = document.createElement('div');
+                div.id = `demmarkov-plot-${idx}`;
+                div.style.height = '400px';
+                div.className = 'glass-card p-4';
+                plotsContainer.appendChild(div);
+                
+                Plotly.newPlot(div.id, [
+                    {
+                        y: row.dem.rsd_curve,
+                        x: Array.from({length: row.dem.rsd_curve.length}, (_, i) => i),
+                        name: '🔬 DEM (réel)',
+                        line: {color: '#1f77b4', width: 3},
+                        mode: 'lines'
+                    },
+                    {
+                        y: row.markov.rsd_curve,
+                        x: Array.from({length: row.markov.rsd_curve.length}, (_, i) => i),
+                        name: '📊 Markov (prédiction)',
+                        line: {color: '#9467bd', width: 2, dash: 'dash'},
+                        mode: 'lines'
+                    }
+                ], {
+                    title: `<b>${row.method}</b> — Erreur: ${row.rsd_final_relative.toFixed(1)}%`,
+                    xaxis: { 
+                        title: '<b>Pas de temps</b>',
+                        gridcolor: '#e0e0e0'
+                    }, 
+                    yaxis: { 
+                        title: '<b>RSD (%)</b>',
+                        gridcolor: '#e0e0e0'
+                    },
+                    hovermode: 'x unified',
+                    plot_bgcolor: '#f8f9fa',
+                    legend: {
+                        x: 1.02, y: 1,
+                        xanchor: 'left', yanchor: 'top',
+                        bgcolor: 'rgba(255, 255, 255, 0.8)',
+                        bordercolor: '#ccc',
+                        borderwidth: 1
+                    },
+                    font: { family: 'Arial, sans-serif', size: 10 }
+                }, { responsive: true });
+            }
+        });
+    });
+}
+
+function updateMixingCharts() {
+    if (!mixingData || mixingData.length === 0) return;
+    
+    waitForPlotly(() => {
+        // Graphique 1: Entropie
+        const entropyTraces = mixingData
+            .filter(data => data.entropy_history && data.entropy_history.length > 0)
+            .map(data => ({
+                y: data.entropy_history,
+                x: Array.from({length: data.entropy_history.length}, (_, i) => i),
+                name: data.method,
+                mode: 'lines',
+                line: {
+                    color: methodColors[data.method.toLowerCase()] || '#999',
+                    width: 3
+                },
+                hovertemplate: `<b>${data.method}</b><br>Pas: %{x}<br>Entropie: %{y:.3f}<extra></extra>`
+            }));
+        
+        // Graphique 2: Variance
+        const varianceTraces = mixingData
+            .filter(data => data.variance_history && data.variance_history.length > 0)
+            .map(data => ({
+                y: data.variance_history,
+                x: Array.from({length: data.variance_history.length}, (_, i) => i),
+                name: data.method,
+                mode: 'lines',
+                line: {
+                    color: methodColors[data.method.toLowerCase()] || '#999',
+                    width: 3
+                },
+                hovertemplate: `<b>${data.method}</b><br>Pas: %{x}<br>Variance: %{y:.3f}<extra></extra>`
+            }));
+        
+        // Afficher les graphiques
+        if (entropyTraces.length > 0) {
+            Plotly.newPlot('chart-mixing-entropy', entropyTraces, {
+                title: '<b>Convergence d\'entropie</b>',
+                xaxis: { title: '<b>Pas de temps</b>', gridcolor: '#e0e0e0' },
+                yaxis: { title: '<b>Entropie</b>', gridcolor: '#e0e0e0' },
+                hovermode: 'x unified',
+                plot_bgcolor: '#f8f9fa',
+                legend: { x: 1.02, y: 1, xanchor: 'left', yanchor: 'top' },
+                font: { family: 'Arial, sans-serif', size: 11 }
+            }, { responsive: true });
+        }
+        
+        if (varianceTraces.length > 0) {
+            Plotly.newPlot('chart-mixing-variance', varianceTraces, {
+                title: '<b>Convergence de la variance</b>',
+                xaxis: { title: '<b>Pas de temps</b>', gridcolor: '#e0e0e0' },
+                yaxis: { title: '<b>Variance</b>', gridcolor: '#e0e0e0' },
+                hovermode: 'x unified',
+                plot_bgcolor: '#f8f9fa',
+                legend: { x: 1.02, y: 1, xanchor: 'left', yanchor: 'top' },
+                font: { family: 'Arial, sans-serif', size: 11 }
+            }, { responsive: true });
+        }
+        
+        // Remplir le tableau
+        const tableBody = document.getElementById('mixing-table');
+        tableBody.innerHTML = '';
+        mixingData.forEach((data, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="px-3 py-2 font-semibold">${data.method}</td>
+                <td class="px-3 py-2 text-right font-mono">${data.t50 || '—'}</td>
+                <td class="px-3 py-2 text-right font-mono">${data.t90 || '—'}</td>
+                <td class="px-3 py-2 text-right font-mono">${data.entropy_history ? data.entropy_history[data.entropy_history.length - 1].toFixed(4) : '—'}</td>
+            `;
+            tableBody.appendChild(tr);
+        });
+    });
+}
+
+function updateEigenvaluesCharts() {
+    if (!eigenvaluesData || eigenvaluesData.length === 0) return;
+    
+    waitForPlotly(() => {
+        // Graphique 1: Spectre des valeurs propres
+        const spectrumTraces = eigenvaluesData
+            .filter(data => data.eigenvalues && data.eigenvalues.length > 0)
+            .map(data => ({
+                x: Array.from({length: data.eigenvalues.length}, (_, i) => i + 1),
+                y: data.eigenvalues.map(e => Math.abs(e)),
+                name: data.method,
+                mode: 'markers',
+                marker: {
+                    color: methodColors[data.method.toLowerCase()] || '#999',
+                    size: 8,
+                    opacity: 0.7
+                },
+                hovertemplate: `<b>${data.method}</b><br>Index: %{x}<br>|λ|: %{y:.4f}<extra></extra>`
+            }));
+        
+        // Graphique 2: Deuxième valeur propre (λ₂)
+        const lambda2Data = eigenvaluesData
+            .filter(data => data.lambda2 !== undefined)
+            .map(data => ({
+                method: data.method,
+                lambda2: Math.abs(data.lambda2),
+                color: methodColors[data.method.toLowerCase()] || '#999'
+            }));
+        
+        const lambda2Trace = {
+            x: lambda2Data.map(d => d.method),
+            y: lambda2Data.map(d => d.lambda2),
+            type: 'bar',
+            marker: {
+                color: lambda2Data.map(d => d.color)
+            },
+            text: lambda2Data.map(d => d.lambda2.toFixed(4)),
+            textposition: 'auto',
+            hovertemplate: '<b>%{x}</b><br>λ₂: %{y:.4f}<extra></extra>'
+        };
+        
+        // Afficher les graphiques
+        if (spectrumTraces.length > 0) {
+            Plotly.newPlot('chart-eigenvalues-spectrum', spectrumTraces, {
+                title: '<b>Spectre des valeurs propres (|λ|)</b>',
+                xaxis: { title: '<b>Index</b>', gridcolor: '#e0e0e0' },
+                yaxis: { title: '<b>|λ|</b>', gridcolor: '#e0e0e0' },
+                hovermode: 'closest',
+                plot_bgcolor: '#f8f9fa',
+                legend: { x: 1.02, y: 1, xanchor: 'left', yanchor: 'top' },
+                font: { family: 'Arial, sans-serif', size: 11 }
+            }, { responsive: true });
+        }
+        
+        Plotly.newPlot('chart-eigenvalues-lambda2', [lambda2Trace], {
+            title: '<b>Deuxième valeur propre (λ₂) par méthode</b>',
+            xaxis: { title: '<b>Méthode</b>' },
+            yaxis: { title: '<b>|λ₂|</b>', gridcolor: '#e0e0e0' },
+            plot_bgcolor: '#f8f9fa',
+            font: { family: 'Arial, sans-serif', size: 11 }
+        }, { responsive: true });
+        
+        // Remplir le tableau
+        const tableBody = document.getElementById('eigenvalues-table');
+        tableBody.innerHTML = '';
+        eigenvaluesData.forEach((data, idx) => {
+            const tr = document.createElement('tr');
+            const bgColor = idx % 2 === 0 ? 'bg-gray-50' : '';
+            tr.className = bgColor;
+            tr.innerHTML = `
+                <td class="px-3 py-2"><b>${data.method}</b></td>
+                <td class="px-3 py-2 text-right font-mono">${data.lambda2 ? Math.abs(data.lambda2).toFixed(4) : '—'}</td>
+                <td class="px-3 py-2 text-right font-mono">${data.spectral_gap ? data.spectral_gap.toFixed(4) : '—'}</td>
+                <td class="px-3 py-2 text-right font-mono">${data.mixing_time || '—'}</td>
+                <td class="px-3 py-2 text-right">${data.n_states || '?'} états</td>
+            `;
+            tableBody.appendChild(tr);
+        });
+    });
+}
+
+function waitForPlotly(callback) {
+    if (typeof Plotly !== 'undefined') callback();
+    else setTimeout(() => waitForPlotly(callback), 100);
+}
+
+// Init
+updateCompareCharts();
+</script>
+
+{% endblock %}

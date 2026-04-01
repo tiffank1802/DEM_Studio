@@ -1,0 +1,7 @@
+Watching for file changes with StatReloader
+[27/Mar/2026 10:59:28] "GET / HTTP/1.1" 200 91323
+[27/Mar/2026 10:59:46] "GET /trame/trame-viz/ HTTP/1.1" 200 2678
+[27/Mar/2026 10:59:56] "GET /trame/trame-viz/ HTTP/1.1" 200 2678
+[27/Mar/2026 11:02:45] "GET /trame/trame-viz/ HTTP/1.1" 200 2678
+[27/Mar/2026 11:05:25] "GET /trame/trame-viz/ HTTP/1.1" 200 2678
+[27/Mar/2026 11:05:56] "GET /trame/trame-viz/ HTTP/1.1" 200 2678
