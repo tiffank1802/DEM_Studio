@@ -79,5 +79,6 @@ REST_FRAMEWORK = {
 
 # HuggingFace Bucket
 HF_BUCKET_ID = "ktongue/DEM_MCM"
-HF_BUCKET_PREFIXES = ["markov_results", "markov_sweep_results"]
+# HF_BUCKET_PREFIXES = ["markov_results", "markov_sweep_results"]
+HF_BUCKET_PREFIXES = ["NewResultsMCM", "ResultsDtMCM"]
 HF_DEM_FOLDER = "hf://buckets/ktongue/DEM_MCM/Output Paraview"

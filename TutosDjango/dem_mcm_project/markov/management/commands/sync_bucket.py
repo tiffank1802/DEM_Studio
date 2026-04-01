@@ -109,6 +109,9 @@ class Command(BaseCommand):
             "octree_": "octree",
             "physics_": "physics",
             "NLT_": "cartesian",  # ancien format
+            "adaptive_":"adaptive",
+            "multizone_":"multizone",
+            "single_":"single",
         }
         for prefix, method in prefixes.items():
             if folder_name.startswith(prefix):
