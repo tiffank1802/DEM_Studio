@@ -45,7 +45,7 @@ SAMPLE_RATE = 50  # pour le fit des partitionneurs
 # =============================================================================
 # DATACLASS EXPÉRIENCE
 # =============================================================================
-
+torch.set_num_threads(4)
 
 @dataclass # crée et ajoute automatiquement le constructeur de classe
 class ExperimentConfig:
@@ -681,51 +681,48 @@ def sample_coordinates(files, fs, sample_rate=SAMPLE_RATE):
     
 #     return P
 
-import torch
+
 
 def compute_P_matrix_torch(states_prev, states_curr, n_states, device="cpu"):
     """
-    Calcule P_n pour un timestep - version entièrement vectorisée.
-    P[j,i] = probabilité de transition de l'état i vers l'état j
+    Version robuste et documentée.
+    P[curr, prev] = probabilité de transition de l'état prev vers curr.
     """
-    # Conversion en tensor si nécessaire
+    if n_states == 0:
+        return torch.empty((0, 0), device=device, dtype=torch.float64)
+
+    # Conversion et envoi sur device
     if isinstance(states_prev, np.ndarray):
         states_prev = torch.from_numpy(states_prev)
     if isinstance(states_curr, np.ndarray):
         states_curr = torch.from_numpy(states_curr)
-    
+
     s_prev = states_prev.to(device).long()
     s_curr = states_curr.to(device).long()
-    
+
     n = min(len(s_prev), len(s_curr))
     s_prev = s_prev[:n]
     s_curr = s_curr[:n]
-    
-    # Création des masques one-hot pour chaque particule
-    # phi_prev[p, i] = 1 si particule p était dans état i
-    # phi_curr[p, j] = 1 si particule p est dans état j
-    phi_prev = (s_prev.unsqueeze(1) == torch.arange(n_states, device=device)).float()  # (n, n_states)
-    phi_curr = (s_curr.unsqueeze(1) == torch.arange(n_states, device=device)).float()  # (n, n_states)
-    
-    # Matrice de co-occurrence : transitions[i, j] = nombre de transitions i → j
-    # Somme sur toutes les particules de phi_prev[:, i] * phi_curr[:, j]
-    transitions = phi_prev.T @ phi_curr  # (n_states, n_states)
-    
-    # Dénominateur : nombre de particules dans chaque état au temps précédent
-    denominator = phi_prev.sum(dim=0)  # (n_states,)
-    
-    # P[i, j] = transitions[i, j] / denominator[i]
-    # P = transitions.T / denominator.unsqueeze(1).clamp(min=1e-10)
-    P=transitions.T/denominator
 
-    
-    # Mettre à zéro les lignes sans particules
-    P[denominator == 0] = 0.0
-    
-    # Transposition pour avoir P[j, i] = prob(i → j)
-    # P = P.T
-    
-    return P.to(torch.float64)
+    # Masques one-hot en float64
+    phi_prev = (s_prev.unsqueeze(1) == torch.arange(n_states, device=device)).to(torch.float64)
+    phi_curr = (s_curr.unsqueeze(1) == torch.arange(n_states, device=device)).to(torch.float64)
+
+    # Matrice de co-occurrence : transitions[i,j] = nb de i->j
+    transitions = phi_prev.T @ phi_curr  # (n_states, n_states)
+
+    # Dénominateur : nombre de particules dans chaque état au temps t
+    denominator = phi_prev.sum(dim=0)    # (n_states,)
+
+    # Construction de P sans division par zéro
+    P = torch.zeros((n_states, n_states), device=device, dtype=torch.float64)
+    nonzero = denominator > 0
+    if nonzero.any():
+        # P[curr, prev] = transitions[prev, curr] / denominator[prev]
+        # On utilise l'indexation booléenne
+        P[:, nonzero] = (transitions.T[:, nonzero] / denominator[nonzero].unsqueeze(0))
+
+    return P
 
 
 

@@ -50,6 +50,9 @@ METHOD_PREFIXES = {
     "quantile": ["quantile_"],
     "octree": ["octree_"],
     "physics": ["physics_"],
+    "adaptive":["adaptive_"],
+    "multizone":["multizone"],
+    "single":["single"],
 }
 
 # Couleurs par méthode
@@ -60,6 +63,9 @@ METHOD_COLORS = {
     "quantile": "#d62728",
     "octree": "#9467bd",
     "physics": "#8c564b",
+    "adaptive":"#d5c2bedd",
+    "multizone":"#352712",
+    "single":"#d5d819",
     "unknown": "#7f7f7f",
 }
 
