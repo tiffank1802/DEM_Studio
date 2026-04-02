@@ -529,7 +529,7 @@ def get_configs(method):
         )
 
     # ── Sweep dt ─────────────────────────────────────────────────────────
-    for dt in [.01, .05, .10, .25, .50]:
+    for dt in [1, 5, 10, 25, 50]:
         configs.append(
             ExperimentConfig(
                 method=method,
@@ -724,6 +724,45 @@ def compute_P_matrix_torch(states_prev, states_curr, n_states, device="cpu"):
 
     return P
 
+def compute_P_matrix_batch(
+    states_prev_batch: torch.Tensor,   # (n_pairs, n_particles)
+    states_curr_batch: torch.Tensor,   # (n_pairs, n_particles)
+    n_states: int,
+    device: str = "cpu"
+) -> torch.Tensor:
+    """
+    Calcule la matrice de transition pour plusieurs paires en batch.
+    
+    Returns:
+        P_batch: (n_pairs, n_states, n_states) avec P_batch[k, curr, prev] = prob(prev -> curr) pour la paire k
+    """
+    n_pairs, n_particles = states_prev_batch.shape
+    assert states_curr_batch.shape == (n_pairs, n_particles)
+    
+    # Reshape pour traiter toutes les paires en parallèle
+    # On met les particules en dimension 1, les paires en dimension 0
+    s_prev = states_prev_batch.to(device).long()  # (n_pairs, n_particles)
+    s_curr = states_curr_batch.to(device).long()
+    
+    # One-hot encoding vectorisé sur les deux premières dimensions
+    # shape: (n_pairs, n_particles, n_states)
+    phi_prev = (s_prev.unsqueeze(-1) == torch.arange(n_states, device=device)).to(torch.float64)
+    phi_curr = (s_curr.unsqueeze(-1) == torch.arange(n_states, device=device)).to(torch.float64)
+    
+    # Transitions pour chaque paire : (n_pairs, n_states, n_states)
+    transitions = torch.einsum('pij,pik->pjk', phi_prev, phi_curr)  # ou torch.bmm(phi_prev.transpose(1,2), phi_curr)
+    denominator = phi_prev.sum(dim=1)  # (n_pairs, n_states)
+    
+    # Normalisation (éviter division par zéro)
+    P_batch = torch.zeros((n_pairs, n_states, n_states), device=device, dtype=torch.float64)
+    mask = denominator > 0
+    # P_batch[:, curr, prev] = transitions[:, prev, curr] / denominator[:, prev]
+    # On utilise l'indexation avancée
+    for k in range(n_pairs):
+        P_batch[k, :, mask[k]] = (transitions[k].T[:, mask[k]] / denominator[k, mask[k]].unsqueeze(0))
+    
+    return P_batch
+
 
 
 
@@ -731,132 +770,144 @@ def compute_P_matrix_torch(states_prev, states_curr, n_states, device="cpu"):
 # =============================================================================
 # EXPÉRIENCE
 # =============================================================================
+import torch
+import numpy as np
+import polars as pl
+from tqdm import tqdm
+
+def compute_P_matrix_batch(
+    states_prev_batch: torch.Tensor,   # (n_pairs, n_particles)
+    states_curr_batch: torch.Tensor,   # (n_pairs, n_particles)
+    n_states: int,
+    device: str = "cpu"
+) -> torch.Tensor:
+    """
+    Calcule la matrice de transition pour plusieurs paires en batch.
+
+    Args:
+        states_prev_batch: tenseur (n_pairs, n_particles) des états au temps t
+        states_curr_batch: tenseur (n_pairs, n_particles) des états au temps t+1
+        n_states: nombre total d'états
+        device: 'cpu' ou 'cuda'
+
+    Returns:
+        P_batch: (n_pairs, n_states, n_states) avec P_batch[k, curr, prev] = prob(prev -> curr) pour la paire k
+    """
+    n_pairs, n_particles = states_prev_batch.shape
+    assert states_curr_batch.shape == (n_pairs, n_particles)
+
+    s_prev = states_prev_batch.to(device).long()
+    s_curr = states_curr_batch.to(device).long()
+
+    # Masques one-hot vectorisés sur les paires et les particules
+    # shape: (n_pairs, n_particles, n_states)
+    phi_prev = (s_prev.unsqueeze(-1) == torch.arange(n_states, device=device)).to(torch.float64)
+    phi_curr = (s_curr.unsqueeze(-1) == torch.arange(n_states, device=device)).to(torch.float64)
+
+    # Transitions pour chaque paire : (n_pairs, n_states, n_states)
+    # einsum: p = indice de paire, i = état prev, j = état curr, k = particule
+    transitions = torch.einsum('pki,pkj->pij', phi_prev, phi_curr)  # transitions[p, i, j]
+    denominator = phi_prev.sum(dim=1)  # (n_pairs, n_states)
+
+    # Normalisation : P[p, curr, prev] = transitions[p, prev, curr] / denominator[p, prev]
+    P_batch = torch.zeros((n_pairs, n_states, n_states), device=device, dtype=torch.float64)
+    mask = denominator > 0  # (n_pairs, n_states)
+
+    # Pour chaque paire, on ne normalise que les colonnes (prev) non nulles
+    for p in range(n_pairs):
+        # indices des états prev avec au moins une particule
+        prev_nonzero = mask[p]
+        if prev_nonzero.any():
+            # transitions[p, prev_nonzero, :]  -> shape (nz, n_states)
+            # on transpose pour obtenir (n_states, nz)
+            trans_sub = transitions[p, :, :].T[:, prev_nonzero]  # (n_states, nz)
+            denom_sub = denominator[p, prev_nonzero]             # (nz,)
+            P_batch[p, :, prev_nonzero] = trans_sub / denom_sub.unsqueeze(0)
+
+    return P_batch
+
 
 def run_experiment(config, partitioner, files, fs, device):
     """
-    Exécute une expérience complète avec fenêtre glissante.
-
-    Logique temporelle:
-        Chaque paire utilise deux snapshots séparés de step_size.
-        La fenêtre glisse de dt fichiers entre chaque paire.
-        dt << step_size → beaucoup de paires avec fort recouvrement.
-
-    Exemple: step_size=50, dt=5, start=0, nlt=6
-
-        Fichiers:  0    5   10   15   20   25   ...  50   55   60   ...  75
-                   │    │    │    │    │    │         │    │    │         │
-        Paire 0:   ●────────────────────────────────→●
-                   0                                 50
-        Paire 1:        ●────────────────────────────────→●
-                        5                                 55
-        Paire 2:             ●────────────────────────────────→●
-                            10                                 60
-        Paire 3:                  ●────────────────────────────────→●
-                                 15                                 65
-        Paire 4:                       ●────────────────────────────────→●
-                                      20                                 70
-        Paire 5:                            ●────────────────────────────────→●
-                                           25                                 75
-
-        Toutes les paires ont le MÊME écart temporel (step_size=50).
-        Le glissement de dt=5 raffine l'échantillonnage statistique.
-
-        P_final = (P_0 + P_1 + P_2 + P_3 + P_4 + P_5) / 6
+    Exécute une expérience complète avec fenêtre glissante et traitement par batch.
     """
     n_states = partitioner.n_cells
     step = config.step_size
     dt = config.dt
 
-    # ── Vérifier la faisabilité ──
-    # Dernier fichier nécessaire : start + (nlt-1)*dt + step
+    # Vérification de faisabilité
     last_needed = config.start_index + (config.nlt - 1) * dt + step
-
     if last_needed >= len(files):
-        max_nlt = (len(files) - 1 - config.start_index - 1*step) // dt + 1
+        max_nlt = (len(files) - 1 - config.start_index - step) // dt + 1
         max_nlt = max(max_nlt, 0)
-        print(
-            f"   ⚠️  Seulement {max_nlt} paires possibles "
-            f"(demandé: {config.nlt}, step={step}, dt={dt})"
-        )
+        print(f"   ⚠️  Seulement {max_nlt} paires possibles (demandé: {config.nlt})")
         actual_nlt = max_nlt
     else:
         actual_nlt = config.nlt
 
     if actual_nlt <= 0:
-        raise ValueError(
-            f"Aucune paire possible: start={config.start_index}, "
-            f"step={step}, dt={dt}, fichiers={len(files)}"
-        )
+        raise ValueError(f"Aucune paire possible: start={config.start_index}, step={step}, dt={dt}")
 
-    # ── Construire les paires (fenêtre glissante) ──
-    #
-    #   Paire k : (start + k*dt,  start + k*dt + step)
-    #
-    #   L'écart entre les deux snapshots d'une paire est TOUJOURS = step
-    #   Le décalage entre paires successives est = dt
-    #
-    pairs: list[tuple[int, int]] = []
-    for k in range(actual_nlt):
-        idx_prev = config.start_index + k 
-        idx_curr = idx_prev + step
-        pairs.append((idx_prev, idx_curr))
+    # Construction des paires
+    pairs = [(config.start_index + k * dt, config.start_index + k * dt + step) for k in range(actual_nlt)]
 
-    # ── Diagnostic ──
+    # Affichage d'info
     ratio = dt / step
     if ratio < 1:
         overlap_pct = round((1 - ratio) * 100, 1)
-        n_paires_par_step = int(step / dt)
-        print(f"   🔄 Recouvrement: {overlap_pct}% "
-              f"({n_paires_par_step} paires par intervalle de step_size)")
-    elif ratio == 1:
-        print(f"   ▶️  Paires bout à bout (dt == step)")
-    else:
-        gap = dt - step
-        print(f"   ⏭️  Trou de {gap} fichiers entre paires")
+        print(f"   🔄 Recouvrement: {overlap_pct}% (step/dt = {step/dt:.1f})")
+    print(f"   📐 {actual_nlt} paires | step={step} | dt={dt}")
+    print(f"   📂 Première paire: fichiers {pairs[0][0]} → {pairs[0][1]}")
+    print(f"   📂 Dernière paire:  fichiers {pairs[-1][0]} → {pairs[-1][1]}")
 
-    plage_temporelle = pairs[-1][1] - pairs[0][0]
-    print(
-        f"   📐 {actual_nlt} paires | step={step} | dt={dt}\n"
-        f"   📂 Paire 0:   files[{int(pairs[0][0]):5d}] → files[{int(pairs[0][1]):5d}]\n"
-        f"   📂 Paire {actual_nlt-1}:  files[{int(pairs[-1][0]):5d}] → files[{int(pairs[-1][1]):5d}]\n"
-        f"   📏 Plage temporelle couverte: {plage_temporelle} fichiers"
-    )
+    # Paramètres du batch
+    batch_size = 100  # ajustable selon mémoire GPU
+    P_acc = torch.zeros((n_states, n_states), device=device, dtype=torch.float64)
 
-    # ── Accumulateur ──
-    P_acc = torch.zeros(
-        (n_states, n_states), dtype=torch.float64, device=device
-    )
+    # Boucle sur les batches
+    for start_idx in range(0, len(pairs), batch_size):
+        end_idx = min(start_idx + batch_size, len(pairs))
+        batch_pairs = pairs[start_idx:end_idx]
 
-    for idx_prev, idx_curr in tqdm(pairs, desc="   Paires", leave=False):
-        # Lecture des deux snapshots séparés de step_size
-        with fs.open(files[idx_prev], "rb") as f:
-            df_prev = pl.read_csv(f)
-        with fs.open(files[idx_curr], "rb") as f:
-            df_curr = pl.read_csv(f)
+        batch_prev = []
+        batch_curr = []
 
-        # Assignation des états
-        states_prev = partitioner.compute_states(
-            df_prev["coordinates:0"],
-            df_prev["coordinates:1"],
-            df_prev["coordinates:2"],
-        )
-        states_curr = partitioner.compute_states(
-            df_curr["coordinates:0"],
-            df_curr["coordinates:1"],
-            df_curr["coordinates:2"],
-        )
+        # Lecture et calcul des états pour toutes les paires du batch
+        for idx_prev, idx_curr in batch_pairs:
+            with fs.open(files[idx_prev], "rb") as f:
+                df_prev = pl.read_csv(f)
+            with fs.open(files[idx_curr], "rb") as f:
+                df_curr = pl.read_csv(f)
 
-        # Vers le device
-        sp = torch.from_numpy(states_prev).to(device)
-        sc = torch.from_numpy(states_curr).to(device)
+            states_prev = partitioner.compute_states(
+                df_prev["coordinates:0"],
+                df_prev["coordinates:1"],
+                df_prev["coordinates:2"],
+            )
+            states_curr = partitioner.compute_states(
+                df_curr["coordinates:0"],
+                df_curr["coordinates:1"],
+                df_curr["coordinates:2"],
+            )
 
-        P_acc [:]+= compute_P_matrix_torch(sp, sc, n_states, device)
+            batch_prev.append(torch.from_numpy(states_prev))
+            batch_curr.append(torch.from_numpy(states_curr))
 
-    # ── Moyenne sur les nlt évaluations ──
+        # Empilement en tenseurs (batch_size, n_particles)
+        batch_prev_t = torch.stack(batch_prev).to(device)
+        batch_curr_t = torch.stack(batch_curr).to(device)
+
+        # Calcul des matrices de transition pour tout le batch
+        P_batch = compute_P_matrix_batch(batch_prev_t, batch_curr_t, n_states, device)
+
+        # Accumulation : somme sur la dimension des paires
+        P_acc += P_batch.sum(dim=0)
+
+    # Moyenne sur les paires
     P = P_acc / actual_nlt
     P_np = P.cpu().numpy()
 
-    # ── Statistiques ──
+    # Statistiques (inchangées)
     column_sums = P_np.sum(axis=0)
     visited = column_sums > 0
     diag = np.diag(P_np)
