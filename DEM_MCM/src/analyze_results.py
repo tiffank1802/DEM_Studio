@@ -25,14 +25,18 @@ import json
 import io
 from collections import defaultdict
 from huggingface_hub import HfFileSystem
+from . import bucket_io as bi
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
-BUCKET_ID = "ktongue/DEM_MCM"
-BUCKET_PREFIX = "markov_results"
-BUCKET_BASE = f"hf://buckets/{BUCKET_ID}/{BUCKET_PREFIX}"
+# BUCKET_ID = "ktongue/DEM_MCM"
+# BUCKET_PREFIX = "markov_results"
+# BUCKET_BASE = f"hf://buckets/{BUCKET_ID}/{BUCKET_PREFIX}"
+BUCKET_ID = bi.BUCKET_ID
+BUCKET_PREFIX = bi.BUCKET_PREFIX
+BUCKET_BASE = bi.BUCKET_BASE
 
 # Anciennes données cartésiennes (dossier séparé)
 OLD_BUCKET_PREFIX = "markov_sweep_results"

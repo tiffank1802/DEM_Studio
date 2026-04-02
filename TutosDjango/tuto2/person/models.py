@@ -2,10 +2,12 @@ from ast import mod
 from typing import override
 from django.db import models
 from django.db.models import constraints
+import datetime
 
 class Person (models.Model):
     first_name=models.CharField(max_length=30)
     last_name=models.CharField(max_length=30)
+    birth_date=models.DateField(default=datetime.date(1975,8,3))
     YEAR_IN_SCHOOL_CHOICES=[
         ("FR","Freshman"),
         ("SO","Sophomore"),
@@ -14,12 +16,30 @@ class Person (models.Model):
         ("GR","Graduate"),
     ]
     statut=models.CharField(max_length=2,choices=YEAR_IN_SCHOOL_CHOICES)
-    SHIRT_SIZE={
+    SHIRT_SIZE=[
     "S":"Small",
     "M":"Medium",
     "L":"Large",
-    }
+    ]
     shirt_size=models.CharField(max_length=1,choices=SHIRT_SIZE)
+    
+    def baby_boomer_status(self):
+        "Returns the person's baby-boomer status."
+        import datetime
+        if self.birth_date < datetime.date(1945,8,1):
+            return "Pre-boomer"
+        elif self.birth_date <datetime.date(1965,1,1):
+            return "Baby boomer"
+        else:
+            return "Post-boomer"
+    
+    @property
+    def full_name(self):
+        "Returns the person's full name."
+        return f"{self.first_name} {self.last_name}"
+        
+        
+    
 
 class Musician(models.Model):
     first_name=models.CharField("first name",max_length=50)
@@ -101,4 +121,18 @@ class Membership(models.Model):  # Modèle intermediare dans la relation ManyToM
                 fields=["person","group"],name="unique_person_group"
             )
         ]
+
+class ZipCode(models.Model):
+    name=models.CharField(max_length=128)
     
+class CommonInfo(models.Model):
+    name=models.CharField(max_length=100)
+    age=models.PositiveIntegerField()
+
+    class Meta:
+        abstract=True
+class Student(CommonInfo):
+    home_group=models.CharField(max_length=5)
+    
+    class Meta(CommonInfo.Meta):
+        db_table="Student_info"
